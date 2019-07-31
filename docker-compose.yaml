@@ -1,0 +1,87 @@
+version: '3.3'
+
+services:
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.2.0
+    container_name: elasticsearch
+    environment:
+      ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+      ELASTIC_PASSWORD: "changeme"
+      discovery.type: single-node
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - eslogs:/var/log
+      - esdata1:/usr/share/elasticsearch/data
+    ports:
+      - 9200:9200
+      - 9300:9300
+    networks:
+      - logging-test
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://0.0.0.0:9200"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+  kibana:
+    image: docker.elastic.co/kibana/kibana:7.2.0
+    container_name: kibana
+    environment:
+      server.name: kibana
+      server.host: "0"
+      elasticsearch.hosts: "http://elasticsearch:9200"
+      elasticsearch.username: elastic
+      elasticsearch.password: changeme
+    volumes:
+      - kilogs:/var/log
+    ports:
+      - 5601:5601
+    networks:
+      - logging-test
+    depends_on:
+      - elasticsearch
+    restart: on-failure
+    healthcheck:
+      test: ["CMD", "curl", "-s", "-f", "http://localhost:5601"]
+      retries: 6
+  logstash:
+    image: docker.elastic.co/logstash/logstash:7.2.0
+    container_name: logstash
+    environment:
+      http.host: "0.0.0.0"
+      xpack.monitoring.elasticsearch.hosts: "http://elasticsearch:9200"
+      xpack.monitoring.enabled: true
+      xpack.monitoring.elasticsearch.username: elastic
+      xpack.monitoring.elasticsearch.password: changeme
+    ports:
+      - 5000:5000
+      - 9600:9600
+    environment:
+      LS_JAVA_OPTS: "-Xmx256m -Xms256m"
+    volumes:
+    - ./logstash/pipeline:/config-dir
+    command: logstash -f /config-dir/logstash.conf
+    networks:
+      - logging-test
+    depends_on:
+      - elasticsearch
+    healthcheck:
+      test: bin/logstash -t
+      interval: 60s
+      timeout: 50s
+      retries: 5
+
+volumes:
+  eslogs:
+    driver: local
+  esdata1:
+    driver: local
+  kidata1:
+    driver: local
+  kilogs:
+    driver: local
+
+networks:
+  logging-test:
